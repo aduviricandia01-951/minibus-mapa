@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Ubicación en tiempo real</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  <style>
+    body { margin: 0; }
+    #map { height: 100vh; width: 100vw; }
+    
+  </style>
+  
+  <!-- para agregar gocalizacion, rutas y tiempos -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.css" />
+  <script src="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.min.js"></script>
+</head>
+<body>
+  <div id="map"></div>
+
+  <script>
+    //DETECTAR MI UBICACION(PERSONA ESPERANDO MINIBUS)
+    let userLocation;
+    navigator.geolocation.getCurrentPosition(position => {
+      userLocation = [position.coords.latitude, position.coords.longitude];
+      L.marker(userLocation).addTo(map).bindPopup("Tu ubicación").openPopup();
+    });
+
+    // Inicializar el mapa centrado en El Alto, Bolivia
+    const map = L.map('map').setView([-16.5, -68.1], 13);
+
+    // Cargar capas de OpenStreetMap
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap contributors'
+    }).addTo(map);
+
+
+    //Icono de minibus
+    const minibusIcon = L.icon({
+    iconUrl: 'minibus.png', // nombre del archivo de imagen
+    iconSize: [40, 40],     // tamaño del ícono
+    iconAnchor: [20, 40],   // punto del ícono que se alinea con la ubicación
+    popupAnchor: [0, -40]   // punto desde donde se abre el popup
+    });
+    
+    // Crear marcador inicial,(icono de gps azul)
+    // const marker = L.marker([-16.5, -68.1]).addTo(map);
+
+    //remplazondo el minibus al icono de gps azul
+    const marker = L.marker([-16.5, -68.1], { icon: minibusIcon }).addTo(map);
+    
+    // Conectarse al broker HiveMQ Cloud
+    const client = mqtt.connect('wss://8d698bb1bcec446a98ecbb56b2c2fb8e.s1.eu.hivemq.cloud:8884/mqtt', {
+  username: 'minibus1',
+  password: 'Gatomon951*',
+  protocol: 'wss',
+  rejectUnauthorized: false
+});
+
+client.on('connect', () => {
+  console.log('Conectado a HiveMQ');
+  client.subscribe('owntracks/minibus1/bus01');
+});
+
+client.on('message', (topic, message) => {
+  try {
+    const data = JSON.parse(message.toString());
+    if (data._type === 'location' && data.lat && data.lon) {
+      const lat = data.lat;
+      const lon = data.lon;
+
+      // 🔄 Actualiza el marcador del minibús
+      marker.setLatLng([lat, lon]);
+
+      // 📍 Centra el mapa en la nueva ubicación
+      map.flyTo([lat, lon], 15);
+
+      // 🧭 Aquí puedes agregar la ruta hacia el usuario
+      if (userLocation) {
+        L.Routing.control({
+          waypoints: [
+            L.latLng(lat, lon),               // ubicación del minibús
+            L.latLng(userLocation[0], userLocation[1]) // tu ubicación
+          ],
+          routeWhileDragging: false,
+          showAlternatives: false,
+          addWaypoints: false,
+          createMarker: () => null,
+          router: L.Routing.osrmv1({
+            serviceUrl: 'https://router.project-osrm.org/route/v1'
+          })
+        }).addTo(map);
+      }
+
+      console.log(`Ubicación actualizada: ${lat}, ${lon}`);
+    }
+  } catch (err) {
+    console.error('Error al procesar el mensaje MQTT:', err);
+  }
+});
+  </script>
+</body>
+</html>
