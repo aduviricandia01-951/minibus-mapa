@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  <script src="https://unpkg.com/leaflet-geometryutil"></script>
   <style>
     body { margin: 0; }
     #map { height: 100vh; width: 100vw; }
@@ -65,11 +66,11 @@
 
     const rutaVuelta = [...rutaIda].reverse();
 
-    // Ruta amarilla estática
-    const rutaAmarilla = L.polyline(rutaIda, {
-      color: 'yellow',
-      weight: 4,
-      opacity: 0.5
+    // Ruta azul estática
+    const rutaEstatica = L.polyline(rutaIda, {
+      color: 'blue',
+      weight: 8,
+      opacity: 0.6
     }).addTo(map);
 
     let previousPosition = null;
@@ -78,14 +79,10 @@
 
     const direccionPanel = document.getElementById("direccion");
 
-    function estaSobreRuta(latlng, ruta, toleranciaMetros = 30) {
-      const toleranciaGrados = toleranciaMetros / 111320;
-      return ruta.some(punto => {
-        const distancia = Math.sqrt(
-          Math.pow(latlng.lat - punto[0], 2) + Math.pow(latlng.lng - punto[1], 2)
-        );
-        return distancia <= toleranciaGrados;
-      });
+    function estaSobreRuta(latlng, polyline, toleranciaMetros = 30) {
+      const punto = L.latLng(latlng.lat, latlng.lng);
+      const distancia = L.GeometryUtil.distanceSegment(map, punto, polyline.getLatLngs());
+      return distancia <= toleranciaMetros;
     }
 
     function calcularDistanciaMetros(lat1, lon1, lat2, lon2) {
@@ -120,10 +117,9 @@
       const origen = marker.getLatLng();
       if (!origen) return;
 
-      const sobreRutaIda = estaSobreRuta(destino, rutaIda);
-      const sobreRutaVuelta = estaSobreRuta(destino, rutaVuelta);
+      const sobreRuta = estaSobreRuta(destino, rutaEstatica);
 
-      if (!sobreRutaIda && !sobreRutaVuelta) {
+      if (!sobreRuta) {
         L.popup()
           .setLatLng(destino)
           .setContent("❌ Este punto no está sobre la ruta oficial del minibús.")
@@ -181,7 +177,7 @@
 
             if (userLocation) {
               const userLatLng = L.latLng(userLocation[0], userLocation[1]);
-              const cercaRuta = estaSobreRuta(userLatLng, direction === 'sur' ? rutaIda : rutaVuelta);
+              const cercaRuta = estaSobreRuta(userLatLng, rutaEstatica);
               if (cercaRuta) {
                 const origen = L.latLng(lat, lon);
                 mostrarETA(origen, userLatLng, "🧭 ETA a tu ubicación");
@@ -196,7 +192,6 @@
         console.error('Error al procesar el mensaje MQTT:', err);
       }
     });
-  </script
+  </script>
 </body>
 </html>
-
