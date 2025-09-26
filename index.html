@@ -65,6 +65,13 @@
 
     const rutaVuelta = [...rutaIda].reverse();
 
+    // Ruta amarilla estática
+    const rutaAmarilla = L.polyline(rutaIda, {
+      color: 'yellow',
+      weight: 4,
+      opacity: 0.5
+    }).addTo(map);
+
     let previousPosition = null;
     let rutaIdaPolyline = null;
     let rutaVueltaPolyline = null;
@@ -158,21 +165,20 @@
 
             if (direction === 'sur') {
               rutaIdaPolyline = L.polyline(rutaIda, {
-                color: 'blue',
-                weight: 5,
-                opacity: 0.7
+                color: 'red',
+                weight: 6,
+                opacity: 0.9
               }).addTo(map);
               direccionPanel.textContent = "Dirección: Hacia La Ceja";
             } else {
               rutaVueltaPolyline = L.polyline(rutaVuelta, {
-                color: 'red',
-                weight: 5,
-                opacity: 0.7
+                color: 'green',
+                weight: 6,
+                opacity: 0.9
               }).addTo(map);
               direccionPanel.textContent = "Dirección: Hacia Parada 14";
             }
 
-            // ETA automática si el usuario está cerca de la ruta
             if (userLocation) {
               const userLatLng = L.latLng(userLocation[0], userLocation[1]);
               const cercaRuta = estaSobreRuta(userLatLng, direction === 'sur' ? rutaIda : rutaVuelta);
@@ -190,6 +196,7 @@
         console.error('Error al procesar el mensaje MQTT:', err);
       }
     });
-  </script>
+  </script
 </body>
 </html>
+
