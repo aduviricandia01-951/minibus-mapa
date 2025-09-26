@@ -26,7 +26,7 @@
   </style>
 </head>
 <body>
-  <div id="direccion">Dirección: Detectando...</div>
+  <div id="direccion">Dirección: Esperando ubicación del minibús...</div>
   <div id="map"></div>
 
   <script>
@@ -52,6 +52,7 @@
     const marker = L.marker([-16.55, -68.17], { icon: minibusIcon }).addTo(map);
 
     const rutaIda = [
+      [-16.61532802179032, -68.17491486686562],
       [-16.607728340287515, -68.17505139695902],
       [-16.608023955472067, -68.18318918944819],
       [-16.571950684195162, -68.18574320411543],
@@ -72,6 +73,10 @@
       weight: 8,
       opacity: 0.6
     }).addTo(map);
+
+    // Marcadores de paradas
+    L.marker(rutaIda[0]).addTo(map).bindPopup("📍 Parada 14");
+    L.marker(rutaIda[rutaIda.length - 1]).addTo(map).bindPopup("📍 La Ceja");
 
     let previousPosition = null;
     let rutaIdaPolyline = null;
@@ -195,3 +200,4 @@
   </script>
 </body>
 </html>
+
