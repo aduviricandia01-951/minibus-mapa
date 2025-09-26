@@ -67,14 +67,12 @@
 
     const rutaVuelta = [...rutaIda].reverse();
 
-    // Ruta azul estática
     const rutaEstatica = L.polyline(rutaIda, {
       color: 'blue',
       weight: 8,
       opacity: 0.6
     }).addTo(map);
 
-    // Marcadores de paradas
     L.marker(rutaIda[0]).addTo(map).bindPopup("📍 Parada 14");
     L.marker(rutaIda[rutaIda.length - 1]).addTo(map).bindPopup("📍 La Ceja");
 
@@ -86,7 +84,8 @@
 
     function estaSobreRuta(latlng, polyline, toleranciaMetros = 30) {
       const punto = L.latLng(latlng.lat, latlng.lng);
-      const distancia = L.GeometryUtil.distanceSegment(map, punto, polyline.getLatLngs());
+      const closest = L.GeometryUtil.closest(map, polyline, punto);
+      const distancia = punto.distanceTo(closest);
       return distancia <= toleranciaMetros;
     }
 
@@ -200,4 +199,3 @@
   </script>
 </body>
 </html>
-
