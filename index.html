@@ -10,96 +10,186 @@
   <style>
     body { margin: 0; }
     #map { height: 100vh; width: 100vw; }
-    
+    #direccion {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background: rgba(255,255,255,0.9);
+      padding: 10px 15px;
+      border-radius: 8px;
+      font-family: sans-serif;
+      font-size: 16px;
+      box-shadow: 0 0 5px rgba(0,0,0,0.3);
+      z-index: 1000;
+    }
   </style>
-  
-  <!-- para agregar gocalizacion, rutas y tiempos -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.css" />
-  <script src="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.min.js"></script>
 </head>
 <body>
+  <div id="direccion">Dirección: Detectando...</div>
   <div id="map"></div>
 
   <script>
-    //DETECTAR MI UBICACION(PERSONA ESPERANDO MINIBUS)
+    const map = L.map('map').setView([-16.55, -68.17], 13);
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap contributors'
+    }).addTo(map);
+
     let userLocation;
     navigator.geolocation.getCurrentPosition(position => {
       userLocation = [position.coords.latitude, position.coords.longitude];
       L.marker(userLocation).addTo(map).bindPopup("Tu ubicación").openPopup();
     });
 
-    // Inicializar el mapa centrado en El Alto, Bolivia
-    const map = L.map('map').setView([-16.5, -68.1], 13);
-
-    // Cargar capas de OpenStreetMap
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '© OpenStreetMap contributors'
-    }).addTo(map);
-
-
-    //Icono de minibus
     const minibusIcon = L.icon({
-    iconUrl: 'minibus.png', // nombre del archivo de imagen
-    iconSize: [40, 40],     // tamaño del ícono
-    iconAnchor: [20, 40],   // punto del ícono que se alinea con la ubicación
-    popupAnchor: [0, -40]   // punto desde donde se abre el popup
+      iconUrl: 'minibus.png',
+      iconSize: [40, 40],
+      iconAnchor: [20, 40],
+      popupAnchor: [0, -40]
     });
-    
-    // Crear marcador inicial,(icono de gps azul)
-    // const marker = L.marker([-16.5, -68.1]).addTo(map);
 
-    //remplazondo el minibus al icono de gps azul
-    const marker = L.marker([-16.5, -68.1], { icon: minibusIcon }).addTo(map);
-    
-    // Conectarse al broker HiveMQ Cloud
-    const client = mqtt.connect('wss://8d698bb1bcec446a98ecbb56b2c2fb8e.s1.eu.hivemq.cloud:8884/mqtt', {
-  username: 'minibus1',
-  password: 'Gatomon951*',
-  protocol: 'wss',
-  rejectUnauthorized: false
-});
+    const marker = L.marker([-16.55, -68.17], { icon: minibusIcon }).addTo(map);
 
-client.on('connect', () => {
-  console.log('Conectado a HiveMQ');
-  client.subscribe('owntracks/minibus1/bus01');
-});
+    const rutaIda = [
+      [-16.607728340287515, -68.17505139695902],
+      [-16.608023955472067, -68.18318918944819],
+      [-16.571950684195162, -68.18574320411543],
+      [-16.569936700121115, -68.18576042898955],
+      [-16.568133387993406, -68.18519903299479],
+      [-16.56621392030757, -68.18441571967614],
+      [-16.55782239588086, -68.18086526913896],
+      [-16.50738057307611, -68.16379390618263],
+      [-16.50738057307611, -68.16379390618263],
+      [-16.50738057307611, -68.16379390618263]
+    ];
 
-client.on('message', (topic, message) => {
-  try {
-    const data = JSON.parse(message.toString());
-    if (data._type === 'location' && data.lat && data.lon) {
-      const lat = data.lat;
-      const lon = data.lon;
+    const rutaVuelta = [...rutaIda].reverse();
 
-      // 🔄 Actualiza el marcador del minibús
-      marker.setLatLng([lat, lon]);
+    let previousPosition = null;
+    let rutaIdaPolyline = null;
+    let rutaVueltaPolyline = null;
 
-      // 📍 Centra el mapa en la nueva ubicación
-      map.flyTo([lat, lon], 15);
+    const direccionPanel = document.getElementById("direccion");
 
-      // 🧭 Aquí puedes agregar la ruta hacia el usuario
-      if (userLocation) {
-        L.Routing.control({
-          waypoints: [
-            L.latLng(lat, lon),               // ubicación del minibús
-            L.latLng(userLocation[0], userLocation[1]) // tu ubicación
-          ],
-          routeWhileDragging: false,
-          showAlternatives: false,
-          addWaypoints: false,
-          createMarker: () => null,
-          router: L.Routing.osrmv1({
-            serviceUrl: 'https://router.project-osrm.org/route/v1'
-          })
-        }).addTo(map);
+    function estaSobreRuta(latlng, ruta, toleranciaMetros = 30) {
+      const toleranciaGrados = toleranciaMetros / 111320;
+      return ruta.some(punto => {
+        const distancia = Math.sqrt(
+          Math.pow(latlng.lat - punto[0], 2) + Math.pow(latlng.lng - punto[1], 2)
+        );
+        return distancia <= toleranciaGrados;
+      });
+    }
+
+    function calcularDistanciaMetros(lat1, lon1, lat2, lon2) {
+      const R = 6371000;
+      const dLat = (lat2 - lat1) * Math.PI / 180;
+      const dLon = (lon2 - lon1) * Math.PI / 180;
+      const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                Math.sin(dLon / 2) * Math.sin(dLon / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      return Math.round(R * c);
+    }
+
+    function mostrarETA(origen, destino, mensaje = "🕒 Tiempo estimado") {
+      fetch(`https://router.project-osrm.org/route/v1/driving/${origen.lng},${origen.lat};${destino.lng},${destino.lat}?overview=false`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.routes && data.routes.length > 0) {
+            const duration = data.routes[0].duration;
+            const minutos = Math.round(duration / 60);
+            const distancia = calcularDistanciaMetros(origen.lat, origen.lng, destino.lat, destino.lng);
+            L.popup()
+              .setLatLng(destino)
+              .setContent(`${mensaje}: ${minutos} min<br>📏 Distancia: ${distancia} metros`)
+              .openOn(map);
+          }
+        });
+    }
+
+    map.on('click', function(e) {
+      const destino = e.latlng;
+      const origen = marker.getLatLng();
+      if (!origen) return;
+
+      const sobreRutaIda = estaSobreRuta(destino, rutaIda);
+      const sobreRutaVuelta = estaSobreRuta(destino, rutaVuelta);
+
+      if (!sobreRutaIda && !sobreRutaVuelta) {
+        L.popup()
+          .setLatLng(destino)
+          .setContent("❌ Este punto no está sobre la ruta oficial del minibús.")
+          .openOn(map);
+        return;
       }
 
-      console.log(`Ubicación actualizada: ${lat}, ${lon}`);
-    }
-  } catch (err) {
-    console.error('Error al procesar el mensaje MQTT:', err);
-  }
-});
+      mostrarETA(origen, destino);
+    });
+
+    const client = mqtt.connect('wss://8d698bb1bcec446a98ecbb56b2c2fb8e.s1.eu.hivemq.cloud:8884/mqtt', {
+      username: 'minibus1',
+      password: 'Gatomon951*',
+      protocol: 'wss',
+      rejectUnauthorized: false
+    });
+
+    client.on('connect', () => {
+      console.log('Conectado a HiveMQ');
+      client.subscribe('owntracks/minibus1/bus01');
+    });
+
+    client.on('message', (topic, message) => {
+      try {
+        const data = JSON.parse(message.toString());
+        if (data._type === 'location' && data.lat && data.lon) {
+          const lat = data.lat;
+          const lon = data.lon;
+
+          marker.setLatLng([lat, lon]);
+          map.flyTo([lat, lon], 15);
+
+          if (previousPosition) {
+            const deltaLat = lat - previousPosition[0];
+            const direction = deltaLat < 0 ? 'sur' : 'norte';
+
+            if (rutaIdaPolyline) map.removeLayer(rutaIdaPolyline);
+            if (rutaVueltaPolyline) map.removeLayer(rutaVueltaPolyline);
+
+            if (direction === 'sur') {
+              rutaIdaPolyline = L.polyline(rutaIda, {
+                color: 'blue',
+                weight: 5,
+                opacity: 0.7
+              }).addTo(map);
+              direccionPanel.textContent = "Dirección: Hacia La Ceja";
+            } else {
+              rutaVueltaPolyline = L.polyline(rutaVuelta, {
+                color: 'red',
+                weight: 5,
+                opacity: 0.7
+              }).addTo(map);
+              direccionPanel.textContent = "Dirección: Hacia Parada 14";
+            }
+
+            // ETA automática si el usuario está cerca de la ruta
+            if (userLocation) {
+              const userLatLng = L.latLng(userLocation[0], userLocation[1]);
+              const cercaRuta = estaSobreRuta(userLatLng, direction === 'sur' ? rutaIda : rutaVuelta);
+              if (cercaRuta) {
+                const origen = L.latLng(lat, lon);
+                mostrarETA(origen, userLatLng, "🧭 ETA a tu ubicación");
+              }
+            }
+          }
+
+          previousPosition = [lat, lon];
+          console.log(`Ubicación actualizada: ${lat}, ${lon}`);
+        }
+      } catch (err) {
+        console.error('Error al procesar el mensaje MQTT:', err);
+      }
+    });
   </script>
 </body>
 </html>
