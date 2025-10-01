@@ -37,16 +37,20 @@
     }).addTo(map);
 
     let userLocation;
-    navigator.geolocation.getCurrentPosition(position => {
-      userLocation = [position.coords.latitude, position.coords.longitude];
-      L.marker(userLocation).addTo(map).bindPopup("Tu ubicación").openPopup();
-    });
+    const direccionPanel = document.getElementById("direccion");
 
     const minibusIcon = L.icon({
       iconUrl: 'minibus.png',
       iconSize: [40, 40],
       iconAnchor: [20, 40],
       popupAnchor: [0, -40]
+    });
+
+    const paradaIcon = L.icon({
+      iconUrl: 'parada.png',
+      iconSize: [30, 30],
+      iconAnchor: [15, 30],
+      popupAnchor: [0, -30]
     });
 
     const marker = L.marker([-16.55, -68.17], { icon: minibusIcon }).addTo(map);
@@ -60,33 +64,56 @@
       [-16.568133387993406, -68.18519903299479],
       [-16.56621392030757, -68.18441571967614],
       [-16.55782239588086, -68.18086526913896],
-      [-16.50738057307611, -68.16379390618263],
-      [-16.50738057307611, -68.16379390618263],
       [-16.50738057307611, -68.16379390618263]
     ];
 
     const rutaVuelta = [...rutaIda].reverse();
-
+    
     const rutaEstatica = L.polyline(rutaIda, {
       color: 'blue',
       weight: 8,
       opacity: 0.6
     }).addTo(map);
 
-    L.marker(rutaIda[0]).addTo(map).bindPopup("📍 Parada 14");
-    L.marker(rutaIda[rutaIda.length - 1]).addTo(map).bindPopup("📍 La Ceja");
 
-    let previousPosition = null;
-    let rutaIdaPolyline = null;
-    let rutaVueltaPolyline = null;
+    //PARADAS
+    const paradas = [
+      { nombre: "📍 Parada 739", coords: [-16.61532802179032, -68.17491486686562] },
+      { nombre: "📍 Parada 14", coords: [-16.607866389744196, -68.17513534198416] },
+      { nombre: "📍 Cruce 14", coords: [-16.6079874264066, -68.18318282254427] },
+      { nombre: "📍 Villazón", coords: [-16.604372781077153, -68.18351075498687] },
+      { nombre: "📍 Puente Vela", coords: [-16.598425064729458, -68.1839390435208] },
+      { nombre: "📍 Chijimarka", coords: [-16.59000982849341, -68.18452013033361] },
+      { nombre: "📍 Extranka-Senkata", coords: [-16.58252202640734, -68.18506890203011] },
+      { nombre: "📍 YPFB", coords: [-16.570454069234277, -68.18585612516785] },
+      { nombre: "📍 Zona Franca", coords: [-16.554434374284217, -68.17971994339607] },
+      { nombre: "📍 Puente Bolivia", coords: [-16.54590086706111, -68.1768605941535] },
+      { nombre: "📍 Teleféfico Morado", coords: [-16.5233101297636, -68.16911465015127] },
+      { nombre: "📍 Cruce Viacha", coords: [-16.516567680369718, -68.16686350385443] },
+      { nombre: "📍 Ceja Calle 3", coords: [-16.507482489025175, -68.16380745175105] },
+    ];
 
-    const direccionPanel = document.getElementById("direccion");
+    paradas.forEach(parada => {
+      L.marker(parada.coords, { icon: paradaIcon })
+        .addTo(map)
+        .bindPopup(parada.nombre);
+    });
 
-    function estaSobreRuta(latlng, polyline, toleranciaMetros = 30) {
-      const punto = L.latLng(latlng.lat, latlng.lng);
-      const closest = L.GeometryUtil.closest(map, polyline, punto);
-      const distancia = punto.distanceTo(closest);
-      return distancia <= toleranciaMetros;
+    function encontrarParadaMasCercana(userLatLng) {
+      let paradaCercana = null;
+      let distanciaMinima = Infinity;
+
+      paradas.forEach(parada => {
+        const paradaLatLng = L.latLng(parada.coords[0], parada.coords[1]);
+        const distancia = userLatLng.distanceTo(paradaLatLng);
+
+        if (distancia < distanciaMinima) {
+          distanciaMinima = distancia;
+          paradaCercana = parada;
+        }
+      });
+
+      return paradaCercana;
     }
 
     function calcularDistanciaMetros(lat1, lon1, lat2, lon2) {
@@ -116,23 +143,33 @@
         });
     }
 
-    map.on('click', function(e) {
-      const destino = e.latlng;
-      const origen = marker.getLatLng();
-      if (!origen) return;
+    navigator.geolocation.getCurrentPosition(position => {
+      userLocation = [position.coords.latitude, position.coords.longitude];
+      const userLatLng = L.latLng(userLocation[0], userLocation[1]);
 
-      const sobreRuta = estaSobreRuta(destino, rutaEstatica);
+      L.marker(userLocation).addTo(map).bindPopup("Tu ubicación").openPopup();
 
-      if (!sobreRuta) {
-        L.popup()
-          .setLatLng(destino)
-          .setContent("❌ Este punto no está sobre la ruta oficial del minibús.")
-          .openOn(map);
-        return;
+      const paradaCercana = encontrarParadaMasCercana(userLatLng);
+      if (paradaCercana) {
+        const origen = marker.getLatLng();
+        const destino = L.latLng(paradaCercana.coords[0], paradaCercana.coords[1]);
+        mostrarETA(origen, destino, `🧭 ETA a ${paradaCercana.nombre}`);
       }
-
-      mostrarETA(origen, destino);
+    }, error => {
+      console.warn("No se pudo obtener la ubicación del usuario.");
+      direccionPanel.textContent = "Ubicación del usuario no disponible.";
     });
+
+    let previousPosition = null;
+    let rutaIdaPolyline = null;
+    let rutaVueltaPolyline = null;
+
+    function estaSobreRuta(latlng, polyline, toleranciaMetros = 30) {
+      const punto = L.latLng(latlng.lat, latlng.lng);
+      const closest = L.GeometryUtil.closest(map, polyline, punto);
+      const distancia = punto.distanceTo(closest);
+      return distancia <= toleranciaMetros;
+    }
 
     const client = mqtt.connect('wss://8d698bb1bcec446a98ecbb56b2c2fb8e.s1.eu.hivemq.cloud:8884/mqtt', {
       username: 'minibus1',
@@ -145,57 +182,57 @@
       console.log('Conectado a HiveMQ');
       client.subscribe('owntracks/minibus1/bus01');
     });
-
     client.on('message', (topic, message) => {
-      try {
-        const data = JSON.parse(message.toString());
-        if (data._type === 'location' && data.lat && data.lon) {
-          const lat = data.lat;
-          const lon = data.lon;
+  try {
+    const data = JSON.parse(message.toString());
+    if (data._type === 'location' && data.lat && data.lon) {
+      const lat = data.lat;
+      const lon = data.lon;
 
-          marker.setLatLng([lat, lon]);
-          map.flyTo([lat, lon], 15);
+      marker.setLatLng([lat, lon]);
+      map.flyTo([lat, lon], 15);
 
-          if (previousPosition) {
-            const deltaLat = lat - previousPosition[0];
-            const direction = deltaLat < 0 ? 'sur' : 'norte';
+      if (previousPosition) {
+        const deltaLat = lat - previousPosition[0];
+        const direction = deltaLat < 0 ? 'sur' : 'norte';
 
-            if (rutaIdaPolyline) map.removeLayer(rutaIdaPolyline);
-            if (rutaVueltaPolyline) map.removeLayer(rutaVueltaPolyline);
+        if (rutaIdaPolyline) map.removeLayer(rutaIdaPolyline);
+        if (rutaVueltaPolyline) map.removeLayer(rutaVueltaPolyline);
 
-            if (direction === 'sur') {
-              rutaIdaPolyline = L.polyline(rutaIda, {
-                color: 'red',
-                weight: 6,
-                opacity: 0.9
-              }).addTo(map);
-              direccionPanel.textContent = "Dirección: Hacia La Ceja";
-            } else {
-              rutaVueltaPolyline = L.polyline(rutaVuelta, {
-                color: 'green',
-                weight: 6,
-                opacity: 0.9
-              }).addTo(map);
-              direccionPanel.textContent = "Dirección: Hacia Parada 14";
-            }
-
-            if (userLocation) {
-              const userLatLng = L.latLng(userLocation[0], userLocation[1]);
-              const cercaRuta = estaSobreRuta(userLatLng, rutaEstatica);
-              if (cercaRuta) {
-                const origen = L.latLng(lat, lon);
-                mostrarETA(origen, userLatLng, "🧭 ETA a tu ubicación");
-              }
-            }
-          }
-
-          previousPosition = [lat, lon];
-          console.log(`Ubicación actualizada: ${lat}, ${lon}`);
+        if (direction === 'sur') {
+          rutaIdaPolyline = L.polyline(rutaIda, {
+            color: 'red',
+            weight: 6,
+            opacity: 0.9
+          }).addTo(map);
+          direccionPanel.textContent = "Dirección: Hacia La Ceja";
+        } else {
+          rutaVueltaPolyline = L.polyline(rutaVuelta, {
+            color: 'green',
+            weight: 6,
+            opacity: 0.9
+          }).addTo(map);
+          direccionPanel.textContent = "Dirección: Hacia Parada 14";
         }
-      } catch (err) {
-        console.error('Error al procesar el mensaje MQTT:', err);
+
+        if (userLocation) {
+          const userLatLng = L.latLng(userLocation[0], userLocation[1]);
+          const paradaCercana = encontrarParadaMasCercana(userLatLng);
+          if (paradaCercana) {
+            const destino = L.latLng(paradaCercana.coords[0], paradaCercana.coords[1]);
+            const origen = L.latLng(lat, lon);
+            mostrarETA(origen, destino, `🧭 ETA a ${paradaCercana.nombre}`);
+          }
+        }
       }
-    });
+
+      previousPosition = [lat, lon];
+      console.log(`Ubicación actualizada: ${lat}, ${lon}`);
+    }
+  } catch (err) {
+    console.error('Error al procesar el mensaje MQTT:', err);
+  }
+});
   </script>
 </body>
 </html>
