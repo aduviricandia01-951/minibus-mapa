@@ -54,7 +54,8 @@
     });
 
     const marker = L.marker([-16.55, -68.17], { icon: minibusIcon }).addTo(map);
-
+    
+    //coordendas de ruta
     const rutaIda = [
       [-16.61532802179032, -68.17491486686562],
       [-16.607728340287515, -68.17505139695902],
@@ -68,15 +69,14 @@
     ];
 
     const rutaVuelta = [...rutaIda].reverse();
-    
+
     const rutaEstatica = L.polyline(rutaIda, {
       color: 'blue',
       weight: 8,
       opacity: 0.6
     }).addTo(map);
-
-
-    //PARADAS
+    
+    //coordenadas de paradas
     const paradas = [
       { nombre: "📍 Parada 739", coords: [-16.61532802179032, -68.17491486686562] },
       { nombre: "📍 Parada 14", coords: [-16.607866389744196, -68.17513534198416] },
@@ -88,16 +88,24 @@
       { nombre: "📍 YPFB", coords: [-16.570454069234277, -68.18585612516785] },
       { nombre: "📍 Zona Franca", coords: [-16.554434374284217, -68.17971994339607] },
       { nombre: "📍 Puente Bolivia", coords: [-16.54590086706111, -68.1768605941535] },
-      { nombre: "📍 Teleféfico Morado", coords: [-16.5233101297636, -68.16911465015127] },
+      { nombre: "📍 Teleférico Morado", coords: [-16.5233101297636, -68.16911465015127] },
       { nombre: "📍 Cruce Viacha", coords: [-16.516567680369718, -68.16686350385443] },
-      { nombre: "📍 Ceja Calle 3", coords: [-16.507482489025175, -68.16380745175105] },
+      { nombre: "📍 Ceja Calle 3", coords: [-16.507482489025175, -68.16380745175105] }
     ];
 
+    //muestra el tiempo de llegada a la parada al hacerle click a la parada
     paradas.forEach(parada => {
-      L.marker(parada.coords, { icon: paradaIcon })
-        .addTo(map)
-        .bindPopup(parada.nombre);
-    });
+  const markerParada = L.marker(parada.coords, { icon: paradaIcon })
+    .addTo(map)
+    .bindPopup(parada.nombre);
+
+  markerParada.on('click', () => {
+    const origen = marker.getLatLng(); // ubicación actual del minibús
+    const destino = L.latLng(parada.coords[0], parada.coords[1]);
+
+    mostrarETA(origen, destino, `🕒 ETA a ${parada.nombre}`);
+  });
+});
 
     function encontrarParadaMasCercana(userLatLng) {
       let paradaCercana = null;
@@ -143,26 +151,80 @@
         });
     }
 
-    navigator.geolocation.getCurrentPosition(position => {
-      userLocation = [position.coords.latitude, position.coords.longitude];
-      const userLatLng = L.latLng(userLocation[0], userLocation[1]);
+    // muestra el tiempo estimado al darle click en alguna parte de la ruta 
+    map.on('click', function(e) {
+      const destino = e.latlng;
+      const origen = marker.getLatLng();
+      if (!origen) return;
 
-      L.marker(userLocation).addTo(map).bindPopup("Tu ubicación").openPopup();
+      const sobreRuta = estaSobreRuta(destino, rutaEstatica);
 
-      const paradaCercana = encontrarParadaMasCercana(userLatLng);
-      if (paradaCercana) {
-        const origen = marker.getLatLng();
-        const destino = L.latLng(paradaCercana.coords[0], paradaCercana.coords[1]);
-        mostrarETA(origen, destino, `🧭 ETA a ${paradaCercana.nombre}`);
+      if (!sobreRuta) {
+        L.popup()
+          .setLatLng(destino)
+          .setContent("❌ Este punto no está sobre la ruta oficial del minibús.")
+          .openOn(map);
+        return;
       }
-    }, error => {
-      console.warn("No se pudo obtener la ubicación del usuario.");
-      direccionPanel.textContent = "Ubicación del usuario no disponible.";
+
+      mostrarETA(origen, destino);
     });
 
     let previousPosition = null;
     let rutaIdaPolyline = null;
     let rutaVueltaPolyline = null;
+    let circuloParadaCercana = null;
+
+    navigator.geolocation.getCurrentPosition(position => {
+      userLocation = [position.coords.latitude, position.coords.longitude];
+      const userLatLng = L.latLng(userLocation[0], userLocation[1]);
+
+      //agrega el tiempo de llegada del minibus cuando este cerca la ruta (se ejecuta una sola vez, al cargar la página)
+      if (estaSobreRuta(userLatLng, rutaEstatica)) {
+        const origen = marker.getLatLng(); // o L.latLng(lat, lon) dentro de MQTT
+        mostrarETA(origen, userLatLng, "🕒 ETA a tu ubicación sobre la ruta");
+
+        if (lineaETAUsuario) {
+          map.removeLayer(lineaETAUsuario);
+        }
+
+        lineaETAUsuario = L.polyline([origen, userLatLng], {
+          color: 'blue',
+          weight: 4,
+          dashArray: '4, 6',
+          opacity: 0.7
+        }).addTo(map);
+      }
+      L.marker(userLocation).addTo(map).bindPopup("Tu ubicación").openPopup();
+
+      const paradaCercana = encontrarParadaMasCercana(userLatLng);
+      if (paradaCercana) {
+        const destino = L.latLng(paradaCercana.coords[0], paradaCercana.coords[1]);
+        const origen = marker.getLatLng();
+        mostrarETA(origen, destino, `🧭 ETA a ${paradaCercana.nombre}`);
+
+        if (circuloParadaCercana) {
+          map.removeLayer(circuloParadaCercana);
+        }
+
+        circuloParadaCercana = L.circle(destino, {
+          color: 'orange',
+          fillColor: '#ff6600',
+          fillOpacity: 0.7,
+          radius: 20
+        }).addTo(map);
+
+                let creciendo = true;
+        setInterval(() => {
+          const r = circuloParadaCercana.getRadius();
+          circuloParadaCercana.setRadius(creciendo ? r + 5 : r - 5);
+          creciendo = !creciendo;
+        }, 500);
+      }
+    }, error => {
+      console.warn("No se pudo obtener la ubicación del usuario.");
+      direccionPanel.textContent = "Ubicación del usuario no disponible.";
+    });
 
     function estaSobreRuta(latlng, polyline, toleranciaMetros = 30) {
       const punto = L.latLng(latlng.lat, latlng.lng);
@@ -182,57 +244,111 @@
       console.log('Conectado a HiveMQ');
       client.subscribe('owntracks/minibus1/bus01');
     });
+
     client.on('message', (topic, message) => {
-  try {
-    const data = JSON.parse(message.toString());
-    if (data._type === 'location' && data.lat && data.lon) {
-      const lat = data.lat;
-      const lon = data.lon;
+      try {
+        const data = JSON.parse(message.toString());
+        if (data._type === 'location' && data.lat && data.lon) {
+          const lat = data.lat;
+          const lon = data.lon;
 
-      marker.setLatLng([lat, lon]);
-      map.flyTo([lat, lon], 15);
+          marker.setLatLng([lat, lon]);
+          map.flyTo([lat, lon], 15);
 
-      if (previousPosition) {
-        const deltaLat = lat - previousPosition[0];
-        const direction = deltaLat < 0 ? 'sur' : 'norte';
+          if (previousPosition) {
+            const deltaLat = lat - previousPosition[0];
+            const direction = deltaLat < 0 ? 'sur' : 'norte';
 
-        if (rutaIdaPolyline) map.removeLayer(rutaIdaPolyline);
-        if (rutaVueltaPolyline) map.removeLayer(rutaVueltaPolyline);
+            if (rutaIdaPolyline) map.removeLayer(rutaIdaPolyline);
+            if (rutaVueltaPolyline) map.removeLayer(rutaVueltaPolyline);
 
-        if (direction === 'sur') {
-          rutaIdaPolyline = L.polyline(rutaIda, {
-            color: 'red',
-            weight: 6,
-            opacity: 0.9
-          }).addTo(map);
-          direccionPanel.textContent = "Dirección: Hacia La Ceja";
-        } else {
-          rutaVueltaPolyline = L.polyline(rutaVuelta, {
-            color: 'green',
-            weight: 6,
-            opacity: 0.9
-          }).addTo(map);
-          direccionPanel.textContent = "Dirección: Hacia Parada 14";
-        }
+            if (direction === 'sur') {
+              rutaIdaPolyline = L.polyline(rutaIda, {
+                color: 'red',
+                weight: 6,
+                opacity: 0.9
+              }).addTo(map);
+              direccionPanel.textContent = "Dirección: Hacia La Ceja";
+            } else {
+              rutaVueltaPolyline = L.polyline(rutaVuelta, {
+                color: 'green',
+                weight: 6,
+                opacity: 0.9
+              }).addTo(map);
+              direccionPanel.textContent = "Dirección: Hacia Parada 739";
+            }
 
-        if (userLocation) {
-          const userLatLng = L.latLng(userLocation[0], userLocation[1]);
-          const paradaCercana = encontrarParadaMasCercana(userLatLng);
-          if (paradaCercana) {
-            const destino = L.latLng(paradaCercana.coords[0], paradaCercana.coords[1]);
-            const origen = L.latLng(lat, lon);
-            mostrarETA(origen, destino, `🧭 ETA a ${paradaCercana.nombre}`);
+            if (userLocation) {
+              const userLatLng = L.latLng(userLocation[0], userLocation[1]);
+
+              //agrega el tiempo de llegada del minibus cuando este cerca la ruta
+              
+              if (estaSobreRuta(userLatLng, rutaEstatica)) {
+                const origen = L.latLng(lat, lon);
+                mostrarETA(origen, userLatLng, "🕒 ETA a tu ubicación sobre la ruta");
+
+                if (lineaETAUsuario) {
+                  map.removeLayer(lineaETAUsuario);
+                }
+
+                lineaETAUsuario = L.polyline([origen, userLatLng], {
+                  color: 'blue',
+                  weight: 4,
+                  dashArray: '4, 6',
+                  opacity: 0.7
+                }).addTo(map);
+              }
+
+              //agrega el tiempo de llegada del minibus cuando este cerca la ruta (se ejecuta cosntantemente para mandar señal al servidor)
+              if (estaSobreRuta(userLatLng, rutaEstatica)) {
+                const origen = marker.getLatLng(); // o L.latLng(lat, lon) dentro de MQTT
+                mostrarETA(origen, userLatLng, "🕒 ETA a tu ubicación sobre la ruta");
+
+                if (lineaETAUsuario) {
+                  map.removeLayer(lineaETAUsuario);
+                }
+
+                lineaETAUsuario = L.polyline([origen, userLatLng], {
+                  color: 'blue',
+                  weight: 4,
+                  dashArray: '4, 6',
+                  opacity: 0.7
+                }).addTo(map);
+              }
+              const paradaCercana = encontrarParadaMasCercana(userLatLng);
+              if (paradaCercana) {
+                const destino = L.latLng(paradaCercana.coords[0], paradaCercana.coords[1]);
+                const origen = L.latLng(lat, lon);
+                mostrarETA(origen, destino, `🧭 ETA a ${paradaCercana.nombre}`);
+
+                if (circuloParadaCercana) {
+                  map.removeLayer(circuloParadaCercana);
+                }
+
+                circuloParadaCercana = L.circle(destino, {
+                  color: 'orange',
+                  fillColor: '#ff6600',
+                  fillOpacity: 0.7,
+                  radius: 20
+                }).addTo(map);
+
+                let creciendo = true;
+                setInterval(() => {
+                  const r = circuloParadaCercana.getRadius();
+                  circuloParadaCercana.setRadius(creciendo ? r + 5 : r - 5);
+                  creciendo = !creciendo;
+                }, 500);
+              }
+            }
           }
-        }
-      }
 
-      previousPosition = [lat, lon];
-      console.log(`Ubicación actualizada: ${lat}, ${lon}`);
-    }
-  } catch (err) {
-    console.error('Error al procesar el mensaje MQTT:', err);
-  }
-});
+          previousPosition = [lat, lon];
+          console.log(`Ubicación actualizada: ${lat}, ${lon}`);
+        }
+      } catch (err) {
+        console.error('Error al procesar el mensaje MQTT:', err);
+      }
+    });
   </script>
 </body>
 </html>
