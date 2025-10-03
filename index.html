@@ -4,13 +4,34 @@
   <meta charset="utf-8">
   <title>Ubicación en tiempo real</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- - Carga los estilos de Leaflet, la librería de mapas interactivos que usas para mostrar rutas, paradas y ubicaciones.
+ -->
+
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+  <!-- - Carga el motor de Leaflet, que permite crear mapas, marcadores, rutas, popups, etc. -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <!-- - Carga la librería MQTT.js, que permite conectarte a tu servidor HiveMQ y recibir datos en tiempo real (como la ubicación del minibús). -->
   <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+
+  <!-- - Extiende Leaflet con funciones geométricas, como calcular la distancia entre puntos o verificar si un punto está sobre una ruta -->
   <script src="https://unpkg.com/leaflet-geometryutil"></script>
   <style>
-    body { margin: 0; }
+    /* ESTILO CSS */
+
+    /* Elimina el margen por defecto del navegador para que el mapa ocupe toda la pantalla. */
+    body { margin: 0; } 
+
+    /* - Hace que el mapa ocupe el 100% del alto y ancho de la ventana del navegador. */
     #map { height: 100vh; width: 100vw; }
+
+      /* - Estiliza el panel de dirección que aparece en la esquina superior izquierda:
+      - Lo posiciona encima del mapa.
+      - Le da fondo blanco semitransparente.
+      - Añade padding, bordes redondeados y sombra.
+      - Usa fuente legible y tamaño adecuado.
+      - Se asegura de que esté por encima de otros elementos (z-index: 1000). */
     #direccion {
       position: absolute;
       top: 10px;
@@ -26,33 +47,40 @@
   </style>
 </head>
 <body>
+  <!-- panel informativo en la parte superior izquierda en al pantalla -->
   <div id="direccion">Dirección: Esperando ubicación del minibús...</div>
   <div id="map"></div>
 
   <script>
-    const map = L.map('map').setView([-16.55, -68.17], 13);
+    //intervalo globalmente para que las paradas que se destaquen no se repitan si se actualiza la unicacion del usuario
+    let animacionParadaInterval = null;
 
+    //en la variable map se crea un nuevo mapa con id 'map', con coordenadas de El Alto-La Paz, 13-> el zoom que tendra la pantalla al cargar la pagina entre 0-18 donde 18 es muy cerca
+    const map = L.map('map').setView([-16.55, -68.17], 13);
+    
+    //l.tileLayer muestra al proveedor de los mapas que se van a mostrar, creditos, añade capa de mapa al objeto map
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '© OpenStreetMap contributors'
     }).addTo(map);
 
+    //donde se guardara la ubicacion del usuario
     let userLocation;
     const direccionPanel = document.getElementById("direccion");
-
+    //icono personalizado del minibus
     const minibusIcon = L.icon({
       iconUrl: 'minibus.png',
       iconSize: [40, 40],
       iconAnchor: [20, 40],
       popupAnchor: [0, -40]
     });
-
+    // icono personalizada de la parada
     const paradaIcon = L.icon({
       iconUrl: 'parada.png',
       iconSize: [30, 30],
       iconAnchor: [15, 30],
       popupAnchor: [0, -30]
     });
-
+    //L.marker crea un marcador inical en el mapa con coordenadas 
     const marker = L.marker([-16.55, -68.17], { icon: minibusIcon }).addTo(map);
     
     //coordendas de ruta
@@ -206,7 +234,8 @@
         if (circuloParadaCercana) {
           map.removeLayer(circuloParadaCercana);
         }
-
+        
+        //destaca las paradas mas cercanas a mi ubicacion
         circuloParadaCercana = L.circle(destino, {
           color: 'orange',
           fillColor: '#ff6600',
@@ -214,8 +243,13 @@
           radius: 20
         }).addTo(map);
 
-                let creciendo = true;
-        setInterval(() => {
+        // Evita múltiples animaciones
+        if (animacionParadaInterval) {
+          clearInterval(animacionParadaInterval);
+        }
+
+        let creciendo = true;
+        animacionParadaInterval = setInterval(() => {
           const r = circuloParadaCercana.getRadius();
           circuloParadaCercana.setRadius(creciendo ? r + 5 : r - 5);
           creciendo = !creciendo;
